@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 ALIF TECH - Online Enterprise Billing & Financial Management System
-Streamlit Cloud Edition (Updated with Member Role, Auto Chennai IST Time, Today's Metrics & User Management)
+Enhanced Security, Automated Chennai IST Time & Privacy Controlled
 """
 
 import streamlit as st
 import sqlite3
-from datetime import datetime, timezone, timedelta
+import datetime
 import hashlib
 import html
 import streamlit.components.v1 as components
@@ -14,20 +14,17 @@ import pandas as pd
 
 DB_FILE = "alif_tech_data.db"
 
-# Chennai / IST Timezone helper (GMT +5:30)
-IST_TZ = timezone(timedelta(hours=5, minutes=30))
+# Chennai Time (IST / GMT+5:30) helper
+IST_TZ = datetime.timezone(datetime.timedelta(hours=5, minutes=30), name="IST")
 
-def get_ist_now():
-    return datetime.now(IST_TZ)
+def get_chennai_now():
+    return datetime.datetime.now(IST_TZ)
 
-def get_ist_date_str():
-    return get_ist_now().strftime("%d.%m.%Y")
+def get_chennai_date_str():
+    return get_chennai_now().strftime("%d.%m.%Y")
 
-def get_ist_time_str():
-    return get_ist_now().strftime("%I:%M %p")
-
-def get_ist_datetime_str():
-    return get_ist_now().strftime("%d.%m.%Y %I:%M %p")
+def get_chennai_datetime_str():
+    return get_chennai_now().strftime("%d.%m.%Y %H:%M:%S")
 
 # Page Configuration
 st.set_page_config(
@@ -121,17 +118,13 @@ def init_database():
         created_at TEXT NOT NULL
     )""")
 
-    # Migrate any old 'Staff' role name to 'Member'
-    c.execute("UPDATE users SET role = 'Member' WHERE role = 'Staff'")
-    conn.commit()
-
     c.execute("SELECT COUNT(*) FROM users")
     if c.fetchone()[0] == 0:
-        dt = get_ist_datetime_str()
+        dt = get_chennai_datetime_str()
         c.execute("INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
                   ("owner", hash_pw("owner123"), "Owner", dt))
         c.execute("INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
-                  ("member", hash_pw("member123"), "Member", dt))
+                  ("staff", hash_pw("staff123"), "Staff", dt))
 
     c.execute("""CREATE TABLE IF NOT EXISTS capital_expenses (
         id INTEGER PRIMARY KEY AUTOINCREMENT, sno INTEGER, purpose TEXT, quantity TEXT, amount REAL)""")
@@ -164,7 +157,7 @@ def init_database():
     c.execute("SELECT COUNT(*) FROM sales")
     if c.fetchone()[0] == 0:
         for r in DEFAULT_SALES:
-            c.execute("INSERT INTO sales (sno, item, date, cash, gpay, amount, invoice_no) VALUES (?, ?, ?, ?, ?, ?)", r)
+            c.execute("INSERT INTO sales (sno, item, date, cash, gpay, amount, invoice_no) VALUES (?, ?, ?, ?, ?, ?, ?)", r)
 
     conn.commit()
     conn.close()
@@ -180,16 +173,16 @@ if "logged_in" not in st.session_state:
 if "pos_cart" not in st.session_state:
     st.session_state.pos_cart = []
 
-# --- 1. LOGIN PORTAL (CLEAN SIGN IN ONLY, NO REGISTRATION BUTTON) ---
+# --- 1. LOGIN GATEWAY (NO REGISTER TAB/BUTTON) ---
 if not st.session_state.logged_in:
-    st.markdown("<h2 style='text-align: center; color: #0284C7;'>⚡ ALIF TECH — Portal Login</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #64748B;'>Enterprise Billing & Financial Management System</p>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: #0284C7;'>⚡ ALIF TECH — Online Portal</h2>", unsafe_allow_html=True)
+    st.markdown(f"<p style='text-align: center; color: #64748B;'>Enterprise Billing & Financial System | Chennai Time: {get_chennai_datetime_str()} (GMT+5:30)</p>", unsafe_allow_html=True)
     
-    col1, col2, col3 = st.columns([1, 1.2, 1])
+    col1, col2, col3 = st.columns([1, 1.1, 1])
     with col2:
-        st.markdown("#### Sign In")
-        username_inp = st.text_input("Username")
-        password_inp = st.text_input("Password", type="password")
+        st.markdown("#### 🔑 Sign In")
+        username_inp = st.text_input("Username", key="login_user")
+        password_inp = st.text_input("Password", type="password", key="login_pass")
 
         if st.button("🚀 Sign In", use_container_width=True, type="primary"):
             if username_inp and password_inp:
@@ -207,15 +200,18 @@ if not st.session_state.logged_in:
                 else:
                     st.error("Invalid username or password.")
             else:
-                st.warning("Please enter your credentials.")
+                st.warning("Please enter both username and password.")
 
 # --- 2. AUTHENTICATED SYSTEM DASHBOARD ---
 else:
-    # Sidebar: Live Chennai IST Clock, Profile & Logout
+    current_chennai_date = get_chennai_date_str()
+    current_chennai_datetime = get_chennai_datetime_str()
+
+    # Sidebar: Profile & Logout & Live Chennai Clock
     st.sidebar.markdown(f"### 👤 {st.session_state.username}")
     st.sidebar.markdown(f"**Role:** `{st.session_state.role}`")
-    st.sidebar.info(f"🕒 **Chennai (IST):**\n{get_ist_date_str()} | {get_ist_time_str()}")
-
+    st.sidebar.info(f"🕒 **Chennai Time (GMT+5:30)**\n\n{current_chennai_datetime}")
+    
     if st.sidebar.button("🚪 Sign Out", use_container_width=True):
         st.session_state.logged_in = False
         st.session_state.username = ""
@@ -238,23 +234,12 @@ else:
     purch_df = pd.read_sql("SELECT sno, item, date, rate, quantity, amount FROM purchases ORDER BY sno ASC", conn)
     cap_df = pd.read_sql("SELECT sno, purpose, quantity, amount FROM capital_expenses ORDER BY sno ASC", conn)
 
-    # Global All-time figures (Owner only)
+    # Lifetime Totals
     tot_sales = sales_df['amount'].sum() if not sales_df.empty else 0.0
     tot_cash = sales_df['cash'].sum() if not sales_df.empty else 0.0
     tot_gpay = sales_df['gpay'].sum() if not sales_df.empty else 0.0
     tot_purch = purch_df['amount'].sum() if not purch_df.empty else 0.0
-
-    # Today's figures (Based on Chennai IST date)
-    today_ist_date = get_ist_date_str()
-    sales_today = sales_df[sales_df['date'] == today_ist_date] if not sales_df.empty else pd.DataFrame()
-    today_cash = sales_today['cash'].sum() if not sales_today.empty else 0.0
-    today_gpay = sales_today['gpay'].sum() if not sales_today.empty else 0.0
-    today_total_sales = sales_today['amount'].sum() if not sales_today.empty else 0.0
-
-    purch_today = purch_df[purch_df['date'] == today_ist_date] if not purch_df.empty else pd.DataFrame()
-    today_purch = purch_today['amount'].sum() if not purch_today.empty else 0.0
-    today_purch_items = len(purch_today) if not purch_today.empty else 0
-
+    
     # Sync dynamic purchase in capital row 12
     conn.execute("UPDATE capital_expenses SET amount = ? WHERE UPPER(purpose) = 'PURCHASED'", (tot_purch,))
     conn.commit()
@@ -266,8 +251,18 @@ else:
     cap_deficit = tot_cap - tot_sales
     recovery_rate = (tot_sales / tot_cap * 100) if tot_cap > 0 else 0.0
 
-    # Tabs based on Role (Member vs Owner)
-    if st.session_state.role == "Member":
+    # TODAY'S CHENNAI DATE CALCULATIONS (FOR STAFF & CURRENT STATUS)
+    today_sales_df = sales_df[sales_df['date'] == current_chennai_date] if not sales_df.empty else pd.DataFrame()
+    today_cash = today_sales_df['cash'].sum() if not today_sales_df.empty else 0.0
+    today_gpay = today_sales_df['gpay'].sum() if not today_sales_df.empty else 0.0
+    today_total_sales = today_sales_df['amount'].sum() if not today_sales_df.empty else 0.0
+
+    today_purch_df = purch_df[purch_df['date'] == current_chennai_date] if not purch_df.empty else pd.DataFrame()
+    today_purch_cost = today_purch_df['amount'].sum() if not today_purch_df.empty else 0.0
+    today_purch_count = len(today_purch_df)
+
+    # Tabs based on Role
+    if st.session_state.role == "Staff":
         tabs = st.tabs(["🧾 New Bill (POS)", "💰 Sales Register", "📦 Stock Purchases"])
     else:
         tabs = st.tabs([
@@ -284,10 +279,10 @@ else:
     # --- TAB 1: POS BILL COUNTER ---
     with tabs[0]:
         st.subheader("🧾 New POS Bill Generator")
-        st.caption(f"📅 Billing Date: **{get_ist_date_str()}** | ⏰ Time: **{get_ist_time_str()}** (Chennai IST)")
         col_left, col_right = st.columns([1.2, 1])
 
         with col_left:
+            st.markdown(f"**Billing Date:** `{current_chennai_date}` | **Time:** `{get_chennai_now().strftime('%H:%M:%S')} IST` (Automatic & Locked)")
             st.markdown("##### Quick Service Shortcuts")
             btn_c1, btn_c2, btn_c3, btn_c4 = st.columns(4)
             if btn_c1.button("Printout (₹10)", use_container_width=True):
@@ -325,12 +320,12 @@ else:
             cash_paid = pay_c1.number_input("Cash Amount (₹)", min_value=0.0, value=float(bill_total))
             gpay_paid = pay_c2.number_input("GPay / UPI (₹)", min_value=0.0, value=0.0)
 
-            # Thermal receipt format with live Chennai IST time
+            # Thermal receipt format
             receipt_text = f"""========================================
                ALIF TECH                
    Xerox, Print, Spiral & Online Hub    
 ========================================
-Date   : {get_ist_date_str()}   Time: {get_ist_time_str()}
+Date   : {current_chennai_date}   Time: {get_chennai_now().strftime('%H:%M:%S')} (IST)
 Served : {st.session_state.username} ({st.session_state.role})
 ----------------------------------------
 Item                 Qty          Total
@@ -345,7 +340,7 @@ Paid GPay  :              ₹{gpay_paid:>10.2f}
         THANK YOU! VISIT AGAIN          
 ========================================
 """
-            st.text_area("Receipt Preview", receipt_text, height=190)
+            st.text_area("Receipt Preview", receipt_text, height=200)
 
             action_col1, action_col2 = st.columns(2)
             with action_col1:
@@ -357,13 +352,12 @@ Paid GPay  :              ₹{gpay_paid:>10.2f}
                         cur = conn.cursor()
                         cur.execute("SELECT COALESCE(MAX(sno), 0) + 1 FROM sales")
                         next_sno = cur.fetchone()[0]
-                        dt = get_ist_date_str()
-                        inv_no = f"AT-{get_ist_now().strftime('%y%m%d%H%M')}"
+                        inv_no = f"AT-{get_chennai_now().strftime('%y%m%d%H%M')}"
                         desc = " + ".join([f"{i['Item']}(x{i['Qty']})" for i in st.session_state.pos_cart])[:60]
                         cur.execute("INSERT INTO sales (sno, item, date, cash, gpay, amount, invoice_no) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                    (next_sno, desc, dt, cash_paid, gpay_paid, bill_total, inv_no))
+                                    (next_sno, desc, current_chennai_date, cash_paid, gpay_paid, bill_total, inv_no))
                         conn.commit()
-                        st.success(f"Invoice #{inv_no} saved successfully!")
+                        st.success(f"Invoice #{inv_no} saved successfully for date {current_chennai_date}!")
                         st.session_state.pos_cart = []
                         st.rerun()
 
@@ -405,59 +399,58 @@ Paid GPay  :              ₹{gpay_paid:>10.2f}
     # --- TAB 2: SALES REGISTER ---
     with tabs[1]:
         st.subheader("💰 Sales Register (SALED)")
+        
+        # PRIVACY LOGIC:
         if st.session_state.role == "Owner":
-            st.caption("👑 Owner View: Cumulative Turnover + Today's Figures")
+            st.markdown("##### 🌐 All-Time Overall Revenue (Owner View)")
             k1, k2, k3 = st.columns(3)
             k1.metric("All-Time Cash Sales", f"₹{tot_cash:,.2f}")
             k2.metric("All-Time GPay Sales", f"₹{tot_gpay:,.2f}")
-            k3.metric("Total Cumulative Revenue", f"₹{tot_sales:,.2f}")
+            k3.metric("All-Time Gross Revenue", f"₹{tot_sales:,.2f}")
             
-            st.markdown("---")
-            st.markdown(f"##### 📅 Today's Live Sales Status ({today_ist_date})")
-            t1, t2, t3 = st.columns(3)
-            t1.metric("Today's Cash", f"₹{today_cash:,.2f}")
-            t2.metric("Today's GPay", f"₹{today_gpay:,.2f}")
-            t3.metric("Today's Total Sales", f"₹{today_total_sales:,.2f}")
+            st.markdown(f"##### 📅 Today's Live Counter Status ({current_chennai_date})")
+            tk1, tk2, tk3 = st.columns(3)
+            tk1.metric("Today's Cash Collection", f"₹{today_cash:,.2f}")
+            tk2.metric("Today's GPay Collection", f"₹{today_gpay:,.2f}")
+            tk3.metric("Today's Total Sales", f"₹{today_total_sales:,.2f}")
         else:
-            # MEMBER VIEW: Total cumulative turnover is strictly HIDDEN.
-            # Shows ONLY current date cash and gpay details status!
-            st.markdown(f"##### 📅 Today's Sales Status ({today_ist_date})")
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Today's Cash Sales", f"₹{today_cash:,.2f}")
-            m2.metric("Today's GPay Sales", f"₹{today_gpay:,.2f}")
-            m3.metric("Today's Total Sales", f"₹{today_total_sales:,.2f}")
+            st.info(f"📅 Showing Today's Shift Details — Chennai Date: **{current_chennai_date}**")
+            sk1, sk2, sk3 = st.columns(3)
+            sk1.metric("Today's Cash Collection", f"₹{today_cash:,.2f}")
+            sk2.metric("Today's GPay Collection", f"₹{today_gpay:,.2f}")
+            sk3.metric("Today's Total Counter Sales", f"₹{today_total_sales:,.2f}")
 
         st.dataframe(sales_df, use_container_width=True)
 
     # --- TAB 3: STOCK PURCHASES ---
     with tabs[2]:
         st.subheader("📦 Stock Purchases (PURCHASED)")
+        
+        # PRIVACY LOGIC:
         if st.session_state.role == "Owner":
-            st.caption("👑 Owner View: All-time Inventory Cost & Item Count")
+            st.markdown("##### 🌐 All-Time Overall Purchases (Owner View)")
             p1, p2 = st.columns(2)
-            p1.metric("All-Time Material Stock Cost", f"₹{tot_purch:,.2f}")
-            p2.metric("Total Items Purchased", f"{len(purch_df)}")
-
-            st.markdown("---")
-            st.markdown(f"##### 📅 Today's Stock Purchases ({today_ist_date})")
+            p1.metric("All-Time Stock Purchases Cost", f"₹{tot_purch:,.2f}")
+            p2.metric("All-Time Items Purchased Count", f"{len(purch_df)}")
+            
+            st.markdown(f"##### 📅 Today's Stock Additions ({current_chennai_date})")
             tp1, tp2 = st.columns(2)
-            tp1.metric("Today's Purchases Amount", f"₹{today_purch:,.2f}")
-            tp2.metric("Today's Purchased Items", f"{today_purch_items}")
+            tp1.metric("Today's Purchases Cost", f"₹{today_purch_cost:,.2f}")
+            tp2.metric("Today's Purchases Count", f"{today_purch_count}")
         else:
-            # MEMBER VIEW: Cumulative stock sums are strictly HIDDEN.
-            # Shows ONLY current date purchase/stock details!
-            st.markdown(f"##### 📅 Today's Stock Purchases ({today_ist_date})")
-            mp1, mp2 = st.columns(2)
-            mp1.metric("Today's Purchase Amount", f"₹{today_purch:,.2f}")
-            mp2.metric("Today's Purchased Items", f"{today_purch_items}")
+            st.info(f"📅 Showing Today's Stock Status — Chennai Date: **{current_chennai_date}**")
+            sp1, sp2 = st.columns(2)
+            sp1.metric("Today's Stock Purchase Cost", f"₹{today_purch_cost:,.2f}")
+            sp2.metric("Today's Purchased Items Count", f"{today_purch_count}")
 
         with st.expander("➕ Add Purchased Product / Stock"):
             with st.form("add_purch_form"):
                 p_item = st.text_input("Product / Item Name")
                 p_c1, p_c2, p_c3 = st.columns(3)
                 
-                # DATE CANNOT BE CHANGED: Automatically locked to current Chennai IST date!
-                p_date = p_c1.text_input("Date (Chennai IST)", value=get_ist_date_str(), disabled=True)
+                # Locked to current Chennai Date (GMT+5:30)
+                p_date = p_c1.text_input("Date (Chennai IST)", value=current_chennai_date, disabled=True, 
+                                          help="Automatically locked to Chennai Date & Time (GMT+5:30)")
                 p_rate = p_c2.number_input("Rate (₹)", min_value=0.0, value=100.0)
                 p_qty = p_c3.number_input("Quantity (PKT/Units)", min_value=1.0, value=1.0)
                 p_amt = st.number_input("Total Amount (₹) [Leave 0 to auto-calculate]", min_value=0.0, value=0.0)
@@ -469,18 +462,16 @@ Paid GPay  :              ₹{gpay_paid:>10.2f}
                         cur.execute("SELECT COALESCE(MAX(sno), 0) + 1 FROM purchases")
                         next_sno = cur.fetchone()[0]
                         cur.execute("INSERT INTO purchases (sno, item, date, rate, quantity, amount) VALUES (?, ?, ?, ?, ?, ?)",
-                                    (next_sno, p_item, get_ist_date_str(), p_rate, p_qty, actual_amt))
+                                    (next_sno, p_item, current_chennai_date, p_rate, p_qty, actual_amt))
                         conn.commit()
-                        st.success(f"Product '{p_item}' added with Date {get_ist_date_str()}!")
+                        st.success(f"Product '{p_item}' added on {current_chennai_date}!")
                         st.rerun()
-                    else:
-                        st.warning("Please enter product name.")
 
         st.dataframe(purch_df, use_container_width=True)
 
     # --- OWNER EXCLUSIVE TABS ---
     if st.session_state.role == "Owner":
-        # TAB 4: SETUP & CAPITAL EXPENSES (DEDUPLICATED)
+        # TAB 4: SETUP & CAPITAL EXPENSES (DEDUPLICATED 12 UNIQUE ITEMS)
         with tabs[3]:
             st.subheader("🏢 Setup & Capital Investments (Sheet 1)")
             st.metric("Total Setup Capital Invested", f"₹{tot_cap:,.2f}")
@@ -526,50 +517,58 @@ Paid GPay  :              ₹{gpay_paid:>10.2f}
             ]
             st.dataframe(pd.DataFrame(sh_data), use_container_width=True)
 
-        # TAB 8: USERS MANAGEMENT (MANUAL ADD & REMOVE REGISTERED USERS)
+        # TAB 8: USERS MANAGEMENT (MANUAL ADD & REMOVE REGISTRATION)
         with tabs[7]:
-            st.subheader("👥 Users Management (Manual Add & Remove)")
-
-            col_add, col_rem = st.columns(2)
-            with col_add:
-                with st.expander("➕ Register / Add New User", expanded=True):
-                    with st.form("man_add_user"):
+            st.subheader("👥 User Management Portal (Add & Remove Registered Users)")
+            
+            u_col1, u_col2 = st.columns(2)
+            
+            # Form 1: Manually Register / Add User
+            with u_col1:
+                with st.expander("➕ Manually Register New User", expanded=True):
+                    with st.form("manual_add_user_form", clear_on_submit=True):
                         new_u = st.text_input("New Username")
                         new_p = st.text_input("New Password", type="password")
-                        new_r = st.selectbox("Role", ["Member", "Owner"])
-                        if st.form_submit_button("Register User", type="primary"):
+                        new_r = st.selectbox("Role", ["Staff", "Owner"])
+                        if st.form_submit_button("Register User", type="primary", use_container_width=True):
                             if new_u and new_p:
                                 cur = conn.cursor()
                                 cur.execute("SELECT id FROM users WHERE username = ?", (new_u.strip(),))
                                 if cur.fetchone():
-                                    st.error(f"User '{new_u}' already exists!")
+                                    st.error(f"Username '{new_u}' already exists!")
                                 else:
-                                    dt = get_ist_datetime_str()
+                                    dt = get_chennai_datetime_str()
                                     cur.execute("INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
                                                 (new_u.strip(), hash_pw(new_p.strip()), new_r, dt))
                                     conn.commit()
-                                    st.success(f"User '{new_u}' registered as {new_r}!")
+                                    st.success(f"User '{new_u}' ({new_r}) registered successfully at {dt} (IST)!")
                                     st.rerun()
                             else:
-                                st.warning("Please provide username and password.")
+                                st.warning("Please enter both username and password.")
 
-            with col_rem:
-                with st.expander("🗑️ Remove Registered User", expanded=True):
-                    users_to_rem = pd.read_sql("SELECT id, username, role FROM users", conn)
-                    removable_users = users_to_rem[users_to_rem['username'] != st.session_state.username]
+            # Form 2: Manually Remove / Delete Registered User
+            with u_col2:
+                with st.expander("🗑️ Remove / Delete Registered User", expanded=True):
+                    all_users = pd.read_sql("SELECT id, username, role FROM users", conn)
+                    # Filter out currently logged-in user so owner doesn't accidentally delete himself
+                    removable_users = all_users[all_users['username'] != st.session_state.username]
                     
                     if not removable_users.empty:
-                        user_select = st.selectbox("Select User to Remove", removable_users['username'].tolist())
-                        if st.button("❌ Delete Selected User", type="secondary"):
+                        user_to_delete = st.selectbox(
+                            "Select User to Remove", 
+                            removable_users['username'].tolist(),
+                            help="Select the staff or user account you wish to permanently delete."
+                        )
+                        if st.button("❌ Permanently Delete Selected User", type="primary", use_container_width=True):
                             cur = conn.cursor()
-                            cur.execute("DELETE FROM users WHERE username = ?", (user_select,))
+                            cur.execute("DELETE FROM users WHERE username = ?", (user_to_delete,))
                             conn.commit()
-                            st.success(f"User '{user_select}' successfully removed!")
+                            st.success(f"User '{user_to_delete}' has been permanently removed!")
                             st.rerun()
                     else:
-                        st.info("No other users available to remove.")
+                        st.info("No other users available to delete.")
 
-            st.markdown("##### Current Registered Users List")
+            st.markdown("##### 📋 Currently Registered Users")
             users_df = pd.read_sql("SELECT id, username, role, created_at FROM users", conn)
             st.dataframe(users_df, use_container_width=True)
 
